@@ -1,28 +1,81 @@
-version: '3'
-
 services:
+  # Servicio Zookeeper (requerido por Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka-net
+
+  # Servicio Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    networks:
+      - kafka-net
+      - monitoring-net
+
+  # Prometheus
   prometheus:
     image: prom/prometheus
     container_name: prometheus
+    ports:
+      - "9090:9090"
     volumes:
       - ./prometheus/:/etc/prometheus/
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-    expose:
-      - 9090
-    ports:
-      - 9090:9090
+    depends_on:
+      - kafka
+    networks:
+      - monitoring-net
 
+  # Node Exporter
   node-exporter:
     image: quay.io/prometheus/node-exporter:latest
     container_name: nodeexporter
     ports:
-      - 9100:9100
-    expose:
-      - 9100
+      - "9100:9100"
+    networks:
+      - monitoring-net
 
+  # Grafana
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
     ports:
-      - 3000:3000
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring-net
+
+# Volúmenes
+volumes:
+  grafana-storage:
+
+# Redes
+networks:
+  kafka-net:
+    driver: bridge
+  monitoring-net:
+    driver: bridge
